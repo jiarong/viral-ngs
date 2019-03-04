@@ -81,7 +81,7 @@ def parser_deplete(parser=argparse.ArgumentParser()):
     parser = read_utils.parser_revert_sam_common(parser)
     util.cmd.common_args(parser, (('threads', None), ('loglevel', None), ('version', None), ('tmp_dir', None)))
     util.cmd.attach_main(parser, main_deplete)
-    
+
     return parser
 
 
@@ -102,11 +102,11 @@ def main_deplete(args):
 
     # if the user has requested a revertBam
 
-    with read_utils.revert_bam_if_aligned(              args.inBam, 
-                                        revert_bam    = args.revertBam, 
-                                        clear_tags    = args.clear_tags, 
-                                        tags_to_clear = args.tags_to_clear, 
-                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'], 
+    with read_utils.revert_bam_if_aligned(              args.inBam,
+                                        revert_bam    = args.revertBam,
+                                        clear_tags    = args.clear_tags,
+                                        tags_to_clear = args.tags_to_clear,
+                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'],
                                         JVMmemory     = args.JVMmemory,
                                         sanitize      = not args.do_not_sanitize) as bamToDeplete:
         multi_db_deplete_bam(
@@ -154,7 +154,7 @@ def parser_deplete_human(parser=argparse.ArgumentParser()):
     return parser
 
 def main_deplete_human(args):
-    ''' A wrapper around 'deplete'; deprecated but preserved for legacy compatibility. 
+    ''' A wrapper around 'deplete'; deprecated but preserved for legacy compatibility.
     '''
     main_deplete(args)
 __commands__.append(('deplete_human', parser_deplete_human))
@@ -247,6 +247,71 @@ __commands__.append(('filter_lastal_bam', parser_filter_lastal_bam))
 
 
 # ==============================
+# ***  deplete kraken2  ***
+# ==============================
+def parser_deplete_bam_kraken2(parser=argparse.ArgumentParser()):
+    parser.add_argument('in_bam', metavar='inBam', help='Input BAM file.')
+    parser.add_argument('db', help='Kraken2 database directory.')
+    parser.add_argument('out_bam', metavar='outBam', help='Output BAM file.')
+    parser.add_argument('--taxDb', dest='tax_dir', help='Directory to NCBI taxonomy db')
+    parser.add_argument(
+        '--JVMmemory',
+        default=tools.picard.FilterSamReadsTool.jvmMemDefault,
+        help='JVM virtual memory size (default: %(default)s)'
+    )
+    parser.add_argument('-p', '--pThreshold', dest='p_threshold', default=0.5, help='Kraken p threshold')
+    parser.add_argument('--filterTaxid', dest='filter_taxid', type=int, help='Taxid to filter/deplete out')
+    util.cmd.common_args(parser, (('loglevel', None), ('version', None), ('tmp_dir', None)))
+    util.cmd.attach_main(parser, main_deplete_bam_kraken2)
+    return parser
+
+def main_deplete_bam_kraken2(args):
+    '''Use kraken2 to deplete input reads against several databases.'''
+
+    kraken2 = tools.kraken.Kraken2()
+    with util.file.tempfname() as k_reads_fn, util.file.tempfname() as k_report_fn:
+        kraken2.classify(args.db, args.tax_db, args.in_bam,
+                         output_report=k_report_fn, output_reads=k_reads_fn,
+                         num_threads=threads)
+        metagenomics.extract_kraken_unclassified(
+            k_reads_fn, args.in_bam, out_bam,
+            filter_taxid=args.filter_taxid, tax_dir=args.tax_dir,
+            p_threshold=args.p_threshold)
+
+__commands__.append(('deplete_bam_kraken2', parser_deplete_bam_kraken2))
+
+
+def multi_db_deplete_bam(inBam, refDbs, deplete_method, outBam, **kwargs):
+
+    tmpDb = None
+    if len(refDbs)>1 and not any(
+            not os.path.exists(db)  # indexed db prefix
+            or os.path.isdir(db)       # indexed db in directory
+            or (os.path.isfile(db) and ('.tar' in db or '.tgz' in db or '.zip' in db)) # packaged indexed db
+            for db in refDbs):
+        # this is a scenario where all refDbs are unbuilt fasta
+        # files. we can simplify and speed up execution by
+        # concatenating them all and running deplete_method
+        # just once
+        tmpDb = mkstempfname('.fasta')
+        merge_compressed_files(refDbs, tmpDb, sep='\n')
+        refDbs = [tmpDb]
+
+    samtools = tools.samtools.SamtoolsTool()
+    tmpBamIn = inBam
+    for db in refDbs:
+        if not samtools.isEmpty(tmpBamIn):
+            tmpBamOut = mkstempfname('.bam')
+            deplete_method(tmpBamIn, db, tmpBamOut, **kwargs)
+            if tmpBamIn != inBam:
+                os.unlink(tmpBamIn)
+            tmpBamIn = tmpBamOut
+    shutil.copyfile(tmpBamIn, outBam)
+
+    if tmpDb:
+        os.unlink(tmpDb)
+
+# ==============================
 # ***  deplete_bmtagger_bam  ***
 # ==============================
 
@@ -321,10 +386,10 @@ def main_deplete_bam_bmtagger(args):
     def bmtagger_wrapper(inBam, db, outBam, JVMmemory=None):
         return deplete_bmtagger_bam(inBam, db, outBam, srprism_memory=args.srprism_memory, JVMmemory=JVMmemory)
 
-    with read_utils.revert_bam_if_aligned(              args.inBam, 
-                                        clear_tags    = args.clear_tags, 
-                                        tags_to_clear = args.tags_to_clear, 
-                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'], 
+    with read_utils.revert_bam_if_aligned(              args.inBam,
+                                        clear_tags    = args.clear_tags,
+                                        tags_to_clear = args.tags_to_clear,
+                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'],
                                         JVMmemory     = args.JVMmemory,
                                         sanitize      = not args.do_not_sanitize) as bamToDeplete:
         multi_db_deplete_bam(
@@ -516,10 +581,10 @@ def main_deplete_blastn_bam(args):
     def wrapper(inBam, db, outBam, threads, JVMmemory=None):
         return deplete_blastn_bam(inBam, db, outBam, threads=threads, chunkSize=args.chunkSize, JVMmemory=JVMmemory)
 
-    with read_utils.revert_bam_if_aligned(              args.inBam, 
-                                        clear_tags    = args.clear_tags, 
-                                        tags_to_clear = args.tags_to_clear, 
-                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'], 
+    with read_utils.revert_bam_if_aligned(              args.inBam,
+                                        clear_tags    = args.clear_tags,
+                                        tags_to_clear = args.tags_to_clear,
+                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'],
                                         JVMmemory     = args.JVMmemory,
                                         sanitize      = not args.do_not_sanitize) as bamToDeplete:
         multi_db_deplete_bam(bamToDeplete, args.refDbs, wrapper, args.outBam, threads=args.threads, JVMmemory=args.JVMmemory)
@@ -539,7 +604,7 @@ def extract_build_or_use_database(db, db_build_command, db_extension_to_expect, 
                 # this is a single file
                 if db.endswith('.fasta') or db.endswith('.fasta.gz') or db.endswith('.fasta.lz4') or db.endswith('.fa') or db.endswith('.fa.gz') or db.endswith('.fa.lz4'):
                     # this is an unindexed fasta file, we will need to index it
-                    # function should conform to the signature: 
+                    # function should conform to the signature:
                     # db_build_command(inputFasta, outputDirectory, outputFilePrefix)
                     # the function will need to be able to handle lz4, etc.
                     db_build_command(db, tempDbDir, db_prefix)
@@ -581,14 +646,14 @@ def deplete_bwa_bam(inBam, db, outBam, threads=None, clear_tags=True, tags_to_cl
             with util.file.tempfname('.filtered.sam') as filtered_sam:
                 # filter proper pairs
                 tools.samtools.SamtoolsTool().view(['-h','-F0x2'], aligned_sam, filtered_sam)
-                
+
                 picardOptions = []
                 if clear_tags:
                     for tag in tags_to_clear:
                         picardOptions.append("ATTRIBUTE_TO_CLEAR={}".format(tag))
                 tools.picard.RevertSamTool().execute(
-                   filtered_sam, 
-                   outBam, 
+                   filtered_sam,
+                   outBam,
                    picardOptions=['SORT_ORDER=queryname'] + picardOptions,
                     JVMmemory=JVMmemory
                 )
@@ -608,10 +673,10 @@ def parser_deplete_bwa_bam(parser=argparse.ArgumentParser()):
 
 def main_deplete_bwa_bam(args):
     '''Use BWA to remove reads that match at least one of the specified databases.'''
-    with read_utils.revert_bam_if_aligned(              args.inBam, 
-                                        clear_tags    = args.clear_tags, 
-                                        tags_to_clear = args.tags_to_clear, 
-                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'], 
+    with read_utils.revert_bam_if_aligned(              args.inBam,
+                                        clear_tags    = args.clear_tags,
+                                        tags_to_clear = args.tags_to_clear,
+                                        picardOptions = ['MAX_DISCARD_FRACTION=0.5'],
                                         JVMmemory     = args.JVMmemory,
                                         sanitize      = not args.do_not_sanitize) as bamToDeplete:
 

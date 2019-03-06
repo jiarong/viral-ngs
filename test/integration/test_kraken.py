@@ -90,9 +90,9 @@ def test_kraken(kraken_db, input_bam):
     args = parser.parse_args(cmd)
     args.func_main(args)
 
-    with util.file.open_or_gzopen(out_reads, 'r') as inf:
+    with util.file.compressed_open(out_reads, 'rt') as inf:
         assert len(inf.read()) > 0
-    with util.file.open_or_gzopen(out_report) as inf:
+    with util.file.compressed_open(out_report, 'rt') as inf:
         report_lines = [x.strip().split() for x in inf.readlines()]
 
     assert os.path.getsize(out_report) > 0
@@ -124,10 +124,10 @@ def test_kraken_multi(kraken_db):
 
     # just check for non-empty outputs
     for outfile in out_reads:
-        with util.file.open_or_gzopen(outfile, 'r') as inf:
+        with util.file.compressed_open(outfile, 'rt') as inf:
             assert len(inf.read()) > 0
     for outfile in out_reports:
-        with util.file.open_or_gzopen(outfile) as inf:
+        with util.file.compressed_open(outfile, 'rt') as inf:
             assert len(inf.read()) > 0
 
 @unittest.skip("this deadlocks currently...")
@@ -152,10 +152,10 @@ def test_kraken_fifo(kraken_db):
 
     # just check for non-empty outputs
     for outfile in out_reads:
-        with util.file.open_or_gzopen(outfile, 'r') as inf:
+        with util.file.compressed_open(outfile, 'rt') as inf:
             assert len(inf.read()) > 0
     for outfile in out_reports:
-        with util.file.open_or_gzopen(outfile) as inf:
+        with util.file.compressed_open(outfile, 'rt') as inf:
             assert len(inf.read()) > 0
 
 def test_kraken_krona(kraken_db, krona_db, input_bam):
@@ -183,7 +183,7 @@ def test_kraken_on_empty(kraken_db, input_bam):
     args = parser.parse_args(cmd)
     args.func_main(args)
 
-    with util.file.open_or_gzopen(out_reads, 'r') as inf:
+    with util.file.compressed_open(out_reads, 'rt') as inf:
         assert len(inf.read()) == 0
     with open(out_report, 'rt') as inf:
         out_report_contents = inf.readlines()

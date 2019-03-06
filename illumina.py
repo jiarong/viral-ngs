@@ -718,7 +718,7 @@ class SampleSheet(object):
     def _detect_and_load_sheet(self, infile):
         if infile.endswith(('.csv','.csv.gz')):
             # one of a few possible CSV formats (watch out for line endings from other OSes)
-            with util.file.open_or_gzopen(infile, 'rU') as inf:
+            with util.file.compressed_open(infile, 'rt') as inf:
                 header = None
                 miseq_skip = False
                 row_num = 0

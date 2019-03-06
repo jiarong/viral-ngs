@@ -262,7 +262,7 @@ class Kraken(tools.Tool):
             env['PATH'] = ':'.join([os.path.dirname(jellyfish_path), env['PATH']])
             subprocess.check_call(cmd, env=env)
         else:
-            with util.file.open_or_gzopen(output, 'w') as of:
+            with util.file.compressed_open(output, 'wt') as of:
                 util.misc.run(cmd, stdout=of, stderr=subprocess.PIPE, check=True)
 
 
